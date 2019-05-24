@@ -52,7 +52,7 @@ class BridgeManager implements BridgeManagerInterface
     public function process(
         swoole_http_request $swooleRequest,
         swoole_http_response $swooleResponse
-    ): swoole_http_response {
+    ) {
         $slimRequest = Http\Request::createFromEnvironment(
             new Http\Environment([
                 'SERVER_PROTOCOL' => $swooleRequest->server['server_protocol'],
