@@ -67,7 +67,7 @@ class BridgeManager implements BridgeManagerInterface
             ])
         );
         $channel = new Channel(5);
-        $this->requestTransformer->toSlim($swooleRequest, $channel);
+        $this->requestTransformer->toSlim($swooleRequest, $slimRequest, $channel);
         go(function () use ($channel, $slimRequest, $swooleResponse) {
             $slimResponse = $this->app->process($slimRequest, new Http\Response());
             $channel2 = new Channel(3);
