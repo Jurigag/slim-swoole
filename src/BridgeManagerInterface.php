@@ -16,5 +16,5 @@ interface BridgeManagerInterface
     public function process(
         swoole_http_request $swooleRequest,
         swoole_http_response $swooleResponse
-    ): swoole_http_response;
+    );
 }
