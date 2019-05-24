@@ -5,11 +5,14 @@ namespace Pachico\SlimSwoole;
 use Pachico\SlimSwoole\Bridge;
 use Slim\App;
 use Slim\Http;
+use Swoole\Channel;
 use swoole_http_request;
 use swoole_http_response;
 
 class BridgeManager implements BridgeManagerInterface
 {
+    const DEFAULT_SCHEMA = 'http';
+
     /**
      * @var App
      */
@@ -50,9 +53,28 @@ class BridgeManager implements BridgeManagerInterface
         swoole_http_request $swooleRequest,
         swoole_http_response $swooleResponse
     ): swoole_http_response {
-        $slimRequest = $this->requestTransformer->toSlim($swooleRequest);
-        $slimResponse = $this->app->process($slimRequest, new Http\Response());
-
-        return $this->responseMerger->mergeToSwoole($slimResponse, $swooleResponse);
+        $slimRequest = Http\Request::createFromEnvironment(
+            new Http\Environment([
+                'SERVER_PROTOCOL' => $swooleRequest->server['server_protocol'],
+                'REQUEST_METHOD' => $swooleRequest->server['request_method'],
+                'REQUEST_SCHEME' => static::DEFAULT_SCHEMA,
+                'REQUEST_URI' => $swooleRequest->server['request_uri'],
+                'QUERY_STRING' => isset($swooleRequest->server['query_string']) ? $swooleRequest->server['query_string'] : '',
+                'SERVER_PORT' => $swooleRequest->server['server_port'],
+                'REMOTE_ADDR' => $swooleRequest->server['remote_addr'],
+                'REQUEST_TIME' => $swooleRequest->server['request_time'],
+                'REQUEST_TIME_FLOAT' => $swooleRequest->server['request_time_float']
+            ])
+        );
+        $channel = new Channel(5);
+        $this->requestTransformer->toSlim($swooleRequest, $channel);
+        go(function () use ($channel, $slimRequest, $swooleResponse) {
+            $slimResponse = $this->app->process($slimRequest, new Http\Response());
+            $channel2 = new Channel(3);
+            $this->responseMerger->mergeToSwoole($slimResponse, $swooleResponse, $channel2);
+            go(function () use ($channel2, $swooleResponse) {
+                $swooleResponse->end();
+            });
+        });
     }
 }

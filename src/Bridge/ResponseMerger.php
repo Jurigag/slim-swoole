@@ -4,6 +4,7 @@ namespace Pachico\SlimSwoole\Bridge;
 
 use Slim\App;
 use Slim\Http;
+use Swoole\Channel;
 use swoole_http_response;
 
 class ResponseMerger implements ResponseMergerInterface
@@ -24,39 +25,45 @@ class ResponseMerger implements ResponseMergerInterface
     /**
      * @param Http\Response $slimResponse
      * @param swoole_http_response $swooleResponse
-     *
-     * @return swoole_http_response
      */
     public function mergeToSwoole(
         Http\Response $slimResponse,
-        swoole_http_response $swooleResponse
-    ): swoole_http_response {
-        $container = $this->app->getContainer();
-
-        $settings = $container->get('settings');
-        if (isset($settings['addContentLengthHeader']) && $settings['addContentLengthHeader'] == true) {
-            $size = $slimResponse->getBody()->getSize();
-            if ($size !== null) {
-                $swooleResponse->header('Content-Length', (string) $size);
-            }
-        }
-
-        if (!empty($slimResponse->getHeaders())) {
-            foreach ($slimResponse->getHeaders() as $key => $headerArray) {
-                $swooleResponse->header($key, implode('; ', $headerArray));
-            }
-        }
-
-        $swooleResponse->status($slimResponse->getStatusCode());
-
-        if ($slimResponse->getBody()->getSize() > 0) {
-            if ($slimResponse->getBody()->isSeekable()) {
-                $slimResponse->getBody()->rewind();
+        swoole_http_response $swooleResponse,
+        Channel $channel
+    ): void {
+        go(function () use ($channel, $swooleResponse, $slimResponse) {
+            $container = $this->app->getContainer();
+            $settings = $container->get('settings');
+            if (isset($settings['addContentLengthHeader']) && $settings['addContentLengthHeader'] == true) {
+                $size = $slimResponse->getBody()->getSize();
+                if ($size !== null) {
+                    $swooleResponse->header('Content-Length', (string)$size);
+                }
             }
 
-            $swooleResponse->write($slimResponse->getBody()->getContents());
-        }
+            if (!empty($slimResponse->getHeaders())) {
+                foreach ($slimResponse->getHeaders() as $key => $headerArray) {
+                    $swooleResponse->header($key, implode('; ', $headerArray));
+                }
+            }
+            $channel->push(1);
+        });
 
-        return $swooleResponse;
+        go(function() use($swooleResponse, $slimResponse, $channel) {
+            $swooleResponse->status($slimResponse->getStatusCode());
+            $channel->push(1);
+        });
+
+        go(function() use ($swooleResponse, $slimResponse, $channel){
+            if ($slimResponse->getBody()->getSize() > 0) {
+                if ($slimResponse->getBody()->isSeekable()) {
+                    $slimResponse->getBody()->rewind();
+                }
+
+                $swooleResponse->write($slimResponse->getBody()->getContents());
+            }
+
+            $channel->push(1);
+        });
     }
 }

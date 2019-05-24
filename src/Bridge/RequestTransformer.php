@@ -3,6 +3,7 @@
 namespace Pachico\SlimSwoole\Bridge;
 
 use Slim\Http;
+use Swoole\Channel;
 use swoole_http_request;
 use Dflydev\FigCookies\Cookie;
 use Dflydev\FigCookies\FigRequestCookies;
@@ -14,60 +15,54 @@ class RequestTransformer implements RequestTransformerInterface
     /**
      * @param swoole_http_request $request
      *
-     * @return Http\Request
-     *
      * @todo Handle HTTPS requests
      */
-    public function toSlim(swoole_http_request $request): Http\Request
+    public function toSlim(swoole_http_request $request, Http\Request $slimRequest, Channel $channel): void
     {
+        go(function () use ($request, $slimRequest, $channel) {
+            $this->copyHeaders($request, $slimRequest);
+            $channel->push(1);
+        });
 
-        $slimRequest = Http\Request::createFromEnvironment(
-            new Http\Environment([
-                    'SERVER_PROTOCOL' => $request->server['server_protocol'],
-                    'REQUEST_METHOD' => $request->server['request_method'],
-                    'REQUEST_SCHEME' => static::DEFAULT_SCHEMA,
-                    'REQUEST_URI' => $request->server['request_uri'],
-                    'QUERY_STRING' => isset($request->server['query_string']) ? $request->server['query_string'] : '',
-                    'SERVER_PORT' => $request->server['server_port'],
-                    'REMOTE_ADDR' => $request->server['remote_addr'],
-                    'REQUEST_TIME' => $request->server['request_time'],
-                    'REQUEST_TIME_FLOAT' => $request->server['request_time_float']
-                    ])
-        );
+        go(function () use ($request, $slimRequest, $channel) {
+            if ($this->isMultiPartFormData($request) || $this->isXWwwFormUrlEncoded($request)) {
+                $this->handlePostData($request, $slimRequest);
+            }
+            $channel->push(1);
+        });
 
-        $slimRequest = $this->copyHeaders($request, $slimRequest);
+        go(function() use($request, $slimRequest,$channel) {
+            if ($this->isMultiPartFormData($request)) {
+                $this->handleUploadedFiles($request, $slimRequest);
+            }
+            $channel->push(1);
+        });
 
-        if ($this->isMultiPartFormData($request) || $this->isXWwwFormUrlEncoded($request)) {
-            $slimRequest = $this->handlePostData($request, $slimRequest);
-        }
+        go(function() use($request, $slimRequest, $channel) {
+            $this->copyCookies($request, $slimRequest);
+            $channel->push(1);
+        });
 
-        if ($this->isMultiPartFormData($request)) {
-            $slimRequest = $this->handleUploadedFiles($request, $slimRequest);
-        }
-
-        $slimRequest = $this->copyCookies($request, $slimRequest);
-
-        return $this->copyBody($request, $slimRequest);
+        go(function() use ($request, $slimRequest, $channel) {
+            $this->copyBody($request, $slimRequest);
+            $channel->push(1);
+        });
     }
 
     /**
      * @param swoole_http_request $request
      * @param Http\Request $slimRequest
-     *
-     * @return Http\Request
      */
-    private function copyCookies(swoole_http_request $request, Http\Request $slimRequest): Http\Request
+    private function copyCookies(swoole_http_request $request, Http\Request $slimRequest):void
     {
         if (empty($request->cookie)) {
-            return $slimRequest;
+            return;
         }
 
         foreach ($request->cookie as $name => $value) {
             $cookie = Cookie::create($name, $value);
-            $slimRequest = FigRequestCookies::set($slimRequest, $cookie);
+            FigRequestCookies::set($slimRequest, $cookie);
         }
-
-        return $slimRequest;
     }
 
     /**
@@ -76,7 +71,7 @@ class RequestTransformer implements RequestTransformerInterface
      *
      * @return Http\Request
      */
-    private function copyBody(swoole_http_request $request, Http\Request $slimRequest): Http\Request
+    private function copyBody(swoole_http_request $request, Http\Request $slimRequest): void
     {
         if (empty($request->rawContent())) {
             return $slimRequest;
@@ -86,7 +81,7 @@ class RequestTransformer implements RequestTransformerInterface
         $body->write($request->rawContent());
         $body->rewind();
 
-        return $slimRequest->withBody($body);
+        $slimRequest->withBody($body);
     }
 
     /**
@@ -95,14 +90,12 @@ class RequestTransformer implements RequestTransformerInterface
      *
      * @return Http\Request
      */
-    private function copyHeaders(swoole_http_request $request, Http\Request $slimRequest): Http\Request
+    private function copyHeaders(swoole_http_request $request, Http\Request $slimRequest): void
     {
 
         foreach ($request->header as $key => $val) {
             $slimRequest = $slimRequest->withHeader($key, $val);
         }
-
-        return $slimRequest;
     }
 
     /**
@@ -141,13 +134,11 @@ class RequestTransformer implements RequestTransformerInterface
     /**
      * @param swoole_http_request $request
      * @param Http\Request $slimRequest
-     *
-     * @return Http\Request
      */
-    private function handleUploadedFiles(swoole_http_request $request, Http\Request $slimRequest): Http\Request
+    private function handleUploadedFiles(swoole_http_request $request, Http\Request $slimRequest): void
     {
         if (empty($request->files) || !is_array($request->files)) {
-            return $slimRequest;
+            return;
         }
 
         $uploadedFiles = [];
@@ -162,7 +153,7 @@ class RequestTransformer implements RequestTransformerInterface
             );
         }
 
-        return $slimRequest->withUploadedFiles($uploadedFiles);
+        $slimRequest->withUploadedFiles($uploadedFiles);
     }
 
     /**
@@ -171,12 +162,12 @@ class RequestTransformer implements RequestTransformerInterface
      *
      * @return Http\Request
      */
-    private function handlePostData(swoole_http_request $swooleRequest, Http\Request $slimRequest): Http\Request
+    private function handlePostData(swoole_http_request $swooleRequest, Http\Request $slimRequest): void
     {
         if (empty($swooleRequest->post) || !is_array($swooleRequest->post)) {
-            return $slimRequest;
+            return;
         }
 
-        return $slimRequest->withParsedBody($swooleRequest->post);
+        $slimRequest->withParsedBody($swooleRequest->post);
     }
 }

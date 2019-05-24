@@ -3,6 +3,7 @@
 namespace Pachico\SlimSwoole\Bridge;
 
 use Slim\Http;
+use Swoole\Channel;
 use swoole_http_request;
 
 interface RequestTransformerInterface
@@ -13,5 +14,5 @@ interface RequestTransformerInterface
      * @return Http\Request
      *
      */
-    public function toSlim(swoole_http_request $request): Http\Request;
+    public function toSlim(swoole_http_request $request, Http\Request, Channel $channel): void;
 }
