@@ -1,5 +1,5 @@
 {
-    "name": "pachico/slim-swoole",
+    "name": "jurigag/slim-swoole",
     "type": "library",
     "description": "Convenient library to run SlimPHP applications with Swoole",
     "keywords": [
