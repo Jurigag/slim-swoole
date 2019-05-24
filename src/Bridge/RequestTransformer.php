@@ -55,13 +55,11 @@ class RequestTransformer implements RequestTransformerInterface
      */
     private function copyCookies(swoole_http_request $request, Http\Request $slimRequest):void
     {
-        if (empty($request->cookie)) {
-            return;
-        }
-
-        foreach ($request->cookie as $name => $value) {
-            $cookie = Cookie::create($name, $value);
-            FigRequestCookies::set($slimRequest, $cookie);
+        if (!empty($request->cookie)) {
+            foreach ($request->cookie as $name => $value) {
+                $cookie = Cookie::create($name, $value);
+                FigRequestCookies::set($slimRequest, $cookie);
+            }
         }
     }
 
@@ -74,7 +72,7 @@ class RequestTransformer implements RequestTransformerInterface
     private function copyBody(swoole_http_request $request, Http\Request $slimRequest): void
     {
         if (empty($request->rawContent())) {
-            return $slimRequest;
+            return;
         }
 
         $body = $slimRequest->getBody();
