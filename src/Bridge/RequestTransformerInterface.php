@@ -14,5 +14,5 @@ interface RequestTransformerInterface
      * @return Http\Request
      *
      */
-    public function toSlim(swoole_http_request $request, Http\Request, Channel $channel): void;
+    public function toSlim(swoole_http_request $request, Http\Request $slimRequest, Channel $channel): void;
 }
